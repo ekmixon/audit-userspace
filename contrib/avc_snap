@@ -13,10 +13,7 @@ class avc_snap:
         syslog.syslog( "Number of Plugins = %d" % len(self.plugins))
 
     def is_avc(self):
-        for i in self.audit_list:
-            if i[0] == audit.AUDIT_AVC:
-                return True
-        return False
+        return any(i[0] == audit.AUDIT_AVC for i in self.audit_list)
         
     def out(self):
         if self.is_avc():

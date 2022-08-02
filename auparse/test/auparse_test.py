@@ -6,23 +6,17 @@ srcdir = os.getenv('srcdir')
 buf = ["type=LOGIN msg=audit(1143146623.787:142): login pid=2027 uid=0 old auid=4294967295 new auid=848\ntype=SYSCALL msg=audit(1143146623.875:143): arch=c000003e syscall=188 success=yes exit=0 a0=7fffffa9a9f0 a1=3958d11333 a2=5131f0 a3=20 items=1 pid=2027 auid=848 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=tty3 comm=\"login\" exe=\"/bin/login\" subj=system_u:system_r:local_login_t:s0-s0:c0.c255\n",
 "type=USER_LOGIN msg=audit(1143146623.879:146): user pid=2027 uid=0 auid=848 msg=\'uid=848: exe=\"/bin/login\" (hostname=?, addr=?, terminal=tty3 res=success)\'\n",
 ]
-files = ["%s%s" % (srcdir,"/test.log"), "%s%s" % (srcdir,"/test2.log")]
+files = [f"{srcdir}/test.log", f"{srcdir}/test2.log"]
 
 import sys
 import time
 load_path = '../../bindings/python/python3'
-if False:
-    sys.path.insert(0, load_path)
-
 import auparse
 import audit
 
 def none_to_null(s):
     'used so output matches C version'
-    if s is None:
-        return '(null)'
-    else:
-        return s
+    return '(null)' if s is None else s
 
 def walk_test(au):
     event_cnt = 1
@@ -50,7 +44,10 @@ def walk_test(au):
             print("    event time: %d.%d:%d, host=%s" % (event.sec, event.milli, event.serial, none_to_null(event.host)))
             au.first_field()
             while True:
-                print("        %s=%s (%s)" % (au.get_field_name(), au.get_field_str(), au.interpret_field()))
+                print(
+                    f"        {au.get_field_name()}={au.get_field_str()} ({au.interpret_field()})"
+                )
+
                 if not au.next_field(): break
             print("")
             record_cnt += 1
@@ -88,7 +85,7 @@ def light_test(au):
 def simple_search(au, source, where):
 
     if source == auparse.AUSOURCE_FILE:
-        au = auparse.AuParser(auparse.AUSOURCE_FILE, srcdir + "/test.log");
+        au = auparse.AuParser(auparse.AUSOURCE_FILE, f"{srcdir}/test.log");
         val = "4294967295"
     else:
         au = auparse.AuParser(auparse.AUSOURCE_BUFFER_ARRAY, buf)
@@ -99,10 +96,10 @@ def simple_search(au, source, where):
     if not au.search_next_event():
         print("Error searching for auid")
     else:
-        print("Found %s = %s" % (au.get_field_name(), au.get_field_str()))
+        print(f"Found {au.get_field_name()} = {au.get_field_str()}")
 
 def compound_search(au, how):
-    au = auparse.AuParser(auparse.AUSOURCE_FILE, srcdir + "/test.log");
+    au = auparse.AuParser(auparse.AUSOURCE_FILE, f"{srcdir}/test.log");
     if how == auparse.AUSEARCH_RULE_AND:
         au.search_add_item("uid", "=", "0", auparse.AUSEARCH_RULE_CLEAR)
         au.search_add_item("pid", "=", "13015", how)
@@ -117,45 +114,49 @@ def compound_search(au, how):
     if not au.search_next_event():
         print("Error searching for auid")
     else:
-        print("Found %s = %s" % (au.get_field_name(), au.get_field_str()))
+        print(f"Found {au.get_field_name()} = {au.get_field_str()}")
 
 def feed_callback(au, cb_event_type, event_cnt):
-    if cb_event_type == auparse.AUPARSE_CB_EVENT_READY:
-        if not au.first_record():
-            print("Error getting first record")
+    if cb_event_type != auparse.AUPARSE_CB_EVENT_READY:
+        return
+    if not au.first_record():
+        print("Error getting first record")
+        sys.exit(1)
+
+    print("event %d has %d records" % (event_cnt[0], au.get_num_records()))
+
+    record_cnt = 1
+    while True:
+        print("    record %d of type %d(%s) has %d fields" % \
+              (record_cnt,
+               au.get_type(), audit.audit_msg_type_to_name(au.get_type()),
+               au.get_num_fields()))
+        print("    line=%d file=%s" % (au.get_line_number(), au.get_filename()))
+        event = au.get_timestamp()
+        if event is None:
+            print("Error getting timestamp - aborting")
             sys.exit(1)
 
-        print("event %d has %d records" % (event_cnt[0], au.get_num_records()))
-
-        record_cnt = 1
+        print("    event time: %d.%d:%d, host=%s" % (event.sec, event.milli, event.serial, none_to_null(event.host)))
+        au.first_field()
         while True:
-            print("    record %d of type %d(%s) has %d fields" % \
-                  (record_cnt,
-                   au.get_type(), audit.audit_msg_type_to_name(au.get_type()),
-                   au.get_num_fields()))
-            print("    line=%d file=%s" % (au.get_line_number(), au.get_filename()))
-            event = au.get_timestamp()
-            if event is None:
-                print("Error getting timestamp - aborting")
-                sys.exit(1)
+            print(
+                f"        {au.get_field_name()}={au.get_field_str()} ({au.interpret_field()})"
+            )
 
-            print("    event time: %d.%d:%d, host=%s" % (event.sec, event.milli, event.serial, none_to_null(event.host)))
-            au.first_field()
-            while True:
-                print("        %s=%s (%s)" % (au.get_field_name(), au.get_field_str(), au.interpret_field()))
-                if not au.next_field(): break
-            print("")
-            record_cnt += 1
-            if not au.next_record(): break
-        event_cnt[0] += 1
+            if not au.next_field(): break
+        print("")
+        record_cnt += 1
+        if not au.next_record(): break
+    event_cnt[0] += 1
 
 au = auparse.AuParser(auparse.AUSOURCE_BUFFER_ARRAY, buf)
 
 print("Starting Test 1, iterate...")
 while au.parse_next_event():
     if au.find_field("auid"):
-        print("%s=%s" % (au.get_field_name(), au.get_field_str()))
-        print("interp auid=%s" % (au.interpret_field()))
+        print(f"{au.get_field_name()}={au.get_field_str()}")
+        print(f"interp auid={au.interpret_field()}")
     else:
         print("Error iterating to auid")
 print("Test 1 Done\n")
@@ -173,9 +174,9 @@ light_test(au);
 print("Test 3 Done\n")
 
 print("Starting Test 4, walk events, records of 1 file...")
-file1 = "%s%s" % (srcdir,"/test.log")
+file1 = f"{srcdir}/test.log"
 au = auparse.AuParser(auparse.AUSOURCE_FILE, file1);
-walk_test(au); 
+walk_test(au);
 print("Test 4 Done\n")
 
 print("Starting Test 5, walk events, records of 2 files...")
@@ -248,11 +249,12 @@ print("Starting Test 10, file feed...")
 au = auparse.AuParser(auparse.AUSOURCE_FEED);
 event_cnt = 1
 au.add_callback(feed_callback, [event_cnt])
-f = open(srcdir + "/test.log");
+f = open(f"{srcdir}/test.log");
 while True:
-    data = f.read(4)
-    if not data: break
-    au.feed(data)
+    if data := f.read(4):
+        au.feed(data)
+    else:
+        break
 au.flush_feed()
 print("Test 10 Done\n")
 
